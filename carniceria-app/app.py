@@ -63,29 +63,49 @@ with tab1:
 with tab2:
     st.header("Auditoría de Días y Meses")
     
-    # Leer datos de la base de datos
-    df = pd.read_sql_query("SELECT fecha as Fecha, tipo as Tipo, categoria as Categoría, monto as Monto, detalle as Detalle FROM movimientos", conn)
+    # Leer datos de la base de datos incluyendo el ID oculto
+    df_raw = pd.read_sql_query("SELECT id, fecha as Fecha, tipo as Tipo, categoria as Categoría, monto as Monto, detalle as Detalle FROM movimientos", conn)
     
-    if not df.empty:
-        df['Fecha'] = pd.to_datetime(df['Fecha'])
+    if not df_raw.empty:
+        df_display = df_raw.copy()
+        df_display['Fecha'] = pd.to_datetime(df_display['Fecha'])
         
         col_f1, col_f2 = st.columns(2)
-        meses = df['Fecha'].dt.to_period('M').unique().astype(str)
+        meses = df_display['Fecha'].dt.to_period('M').unique().astype(str)
         
         with col_f1:
             mes_seleccionado = st.selectbox("Filtrar por Mes", ["Todos"] + list(meses))
         with col_f2:
             filtro_categoria = st.selectbox("Filtrar por Etiqueta", ["Todas", "Falta de Pago (Deuda)", "Préstamo Solicitado", "Pago a Proveedor", "Venta Mostrador", "Otros"])
 
-        df_filtrado = df.copy()
+        df_filtrado = df_display.copy()
         if mes_seleccionado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['Fecha'].dt.to_period('M').astype(str) == mes_seleccionado]
         if filtro_categoria != "Todas":
             df_filtrado = df_filtrado[df_filtrado['Categoría'] == filtro_categoria]
 
         df_filtrado['Fecha'] = df_filtrado['Fecha'].dt.strftime('%Y-%m-%d')
-        st.dataframe(df_filtrado, use_container_width=True)
         
+        # Mostrar tabla sin la columna ID para que quede prolija
+        st.dataframe(df_filtrado.drop(columns=['id']), use_container_width=True)
+        
+        # Sección para eliminar un registro por su número de ID
+        st.markdown("---")
+        st.subheader("🗑️ Eliminar un registro de prueba")
+        col_del1, col_del2 = st.columns([2, 1])
+        with col_del1:
+            id_a_borrar = st.selectbox("Seleccioná el ID del movimiento a borrar", options=df_filtrado['id'].tolist() if not df_filtrado.empty else [])
+        with col_del2:
+            st.write("") # Espaciador
+            if st.button("Eliminar Registro Seleccionado"):
+                if id_a_borrar:
+                    c = conn.cursor()
+                    c.execute("DELETE FROM movimientos WHERE id = ?", (id_a_borrar,))
+                    conn.commit()
+                    st.success(f"¡Registro con ID {id_a_borrar} eliminado con éxito!")
+                    st.rerun() # Recarga la app automáticamente para ver los cambios
+
+        # Totales rápidos
         st.subheader("Resumen del período seleccionado")
         df_filtrado['Monto'] = pd.to_numeric(df_filtrado['Monto'], errors='coerce').fillna(0)
         
