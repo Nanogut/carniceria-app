@@ -1,27 +1,22 @@
 import streamlit as st
+import sqlite3
 import pandas as pd
 from datetime import date
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import json
 
+# 1. Configuración de la página
 st.set_page_config(page_title="El Rincón del Asador", page_icon="🥩", layout="wide", initial_sidebar_state="expanded")
 
-# --- CONEXIÓN A GOOGLE SHEETS ---
-@st.cache_resource
-def conectar_gsheets():
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    
-    # Lee el bloque de texto desde los secrets y lo convierte en diccionario JSON perfectamente
-    creds_dict = json.loads(st.secrets["gcp_service_account"])
-    
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    
-    sheet = client.open("Carniceria_BD").sheet1
-    return sheet
+# --- CONEXIÓN A BASE DE DATOS LOCAL (Segura y sin errores) ---
+def init_db():
+    conn = sqlite3.connect('contabilidad.db', check_same_thread=False)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS movimientos
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  fecha TEXT, tipo TEXT, categoria TEXT, monto REAL, detalle TEXT)''')
+    conn.commit()
+    return conn
 
-sheet = conectar_gsheets()
+conn = init_db()
 
 # --- INTERFAZ PRINCIPAL CON LOGO Y TÍTULO ---
 col_logo, col_titulo = st.columns([1, 6])
@@ -38,6 +33,7 @@ with col_titulo:
 
 st.markdown("---")
 
+# Pestañas de navegación
 tab1, tab2 = st.tabs(["📝 Registrar Movimiento", "📊 Consultar y Auditar"])
 
 with tab1:
@@ -56,17 +52,19 @@ with tab1:
         submit = st.form_submit_button("Guardar Registro")
         if submit:
             if monto_input > 0:
-                nueva_fila = [fecha_input.strftime("%Y-%m-%d"), tipo_input, categoria_input, monto_input, detalle_input]
-                sheet.append_row(nueva_fila)
-                st.success("¡Movimiento guardado con éxito en Google Sheets!")
+                c = conn.cursor()
+                c.execute("INSERT INTO movimientos (fecha, tipo, categoria, monto, detalle) VALUES (?, ?, ?, ?, ?)",
+                          (fecha_input.strftime("%Y-%m-%d"), tipo_input, categoria_input, monto_input, detalle_input))
+                conn.commit()
+                st.success("¡Movimiento guardado con éxito!")
             else:
                 st.error("El monto debe ser mayor a 0.")
 
 with tab2:
     st.header("Auditoría de Días y Meses")
     
-    datos = sheet.get_all_records()
-    df = pd.DataFrame(datos)
+    # Leer datos de la base de datos
+    df = pd.read_sql_query("SELECT fecha as Fecha, tipo as Tipo, categoria as Categoría, monto as Monto, detalle as Detalle FROM movimientos", conn)
     
     if not df.empty:
         df['Fecha'] = pd.to_datetime(df['Fecha'])
