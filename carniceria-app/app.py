@@ -1,25 +1,42 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 from datetime import date
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import json
 
-# 1. Configuración y Base de Datos
-st.set_page_config(page_title="Gestión Carnicería", layout="wide", initial_sidebar_state="expanded")
+# 1. Configuración de la página (Título de la pestaña e ícono)
+st.set_page_config(page_title="El Rincón del Asador", page_icon="🥩", layout="wide", initial_sidebar_state="expanded")
 
-conn = sqlite3.connect('contabilidad.db', check_same_thread=False)
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS movimientos
-             (id INTEGER PRIMARY KEY AUTOINCREMENT,
-              fecha TEXT, tipo TEXT, categoria TEXT, monto REAL, detalle TEXT)''')
-conn.commit()
+# --- CONEXIÓN A GOOGLE SHEETS ---
+@st.cache_resource
+def conectar_gsheets():
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds_dict = json.loads(st.secrets["gcp_service_account"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    
+    # Asegúrate de que tu Google Sheet se llame exactamente "Carniceria_BD"
+    sheet = client.open("Carniceria_BD").sheet1
+    return sheet
 
-def cargar_movimiento(fecha, tipo, categoria, monto, detalle):
-    c.execute("INSERT INTO movimientos (fecha, tipo, categoria, monto, detalle) VALUES (?, ?, ?, ?, ?)",
-              (fecha, tipo, categoria, monto, detalle))
-    conn.commit()
+sheet = conectar_gsheets()
 
-# 2. Interfaz Principal
-st.title("🥩 Contabilidad - Carnicería")
+# --- INTERFAZ PRINCIPAL CON LOGO Y TÍTULO ---
+col_logo, col_titulo = st.columns([1, 6]) # Ajusta las proporciones si lo ves necesario
+
+with col_logo:
+    try:
+        # Intenta cargar el logo subido al repositorio (Asegúrate de que se llame logo.png o cámbiale el nombre aquí)
+        st.image("logo.png", width=90)
+    except:
+        st.write("🥩") # Emoji de respaldo por si el archivo de imagen aún no fue subido
+
+with col_titulo:
+    st.title("El Rincón del Asador")
+    st.caption("Sistema de Gestión y Contabilidad")
+
+st.markdown("---")
 
 # Pestañas de navegación
 tab1, tab2 = st.tabs(["📝 Registrar Movimiento", "📊 Consultar y Auditar"])
@@ -40,16 +57,17 @@ with tab1:
         submit = st.form_submit_button("Guardar Registro")
         if submit:
             if monto_input > 0:
-                cargar_movimiento(fecha_input.strftime("%Y-%m-%d"), tipo_input, categoria_input, monto_input, detalle_input)
-                st.success("¡Movimiento guardado con éxito!")
+                nueva_fila = [fecha_input.strftime("%Y-%m-%d"), tipo_input, categoria_input, monto_input, detalle_input]
+                sheet.append_row(nueva_fila)
+                st.success("¡Movimiento guardado con éxito en Google Sheets!")
             else:
                 st.error("El monto debe ser mayor a 0.")
 
 with tab2:
     st.header("Auditoría de Días y Meses")
     
-    # Filtros
-    df = pd.read_sql_query("SELECT fecha as Fecha, tipo as Tipo, categoria as Categoría, monto as Monto, detalle as Detalle FROM movimientos", conn)
+    datos = sheet.get_all_records()
+    df = pd.DataFrame(datos)
     
     if not df.empty:
         df['Fecha'] = pd.to_datetime(df['Fecha'])
@@ -60,23 +78,20 @@ with tab2:
         with col_f1:
             mes_seleccionado = st.selectbox("Filtrar por Mes", ["Todos"] + list(meses))
         with col_f2:
-            filtro_categoria = st.selectbox("Filtrar por Etiqueta", ["Todas", "Falta de Pago (Deuda)", "Préstamo Solicitado", "Pago a Proveedor"])
+            filtro_categoria = st.selectbox("Filtrar por Etiqueta", ["Todas", "Falta de Pago (Deuda)", "Préstamo Solicitado", "Pago a Proveedor", "Venta Mostrador", "Otros"])
 
-        # Aplicar filtros
         df_filtrado = df.copy()
         if mes_seleccionado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['Fecha'].dt.to_period('M').astype(str) == mes_seleccionado]
         if filtro_categoria != "Todas":
             df_filtrado = df_filtrado[df_filtrado['Categoría'] == filtro_categoria]
 
-        # Convertir fecha a texto para mostrar limpio
         df_filtrado['Fecha'] = df_filtrado['Fecha'].dt.strftime('%Y-%m-%d')
-        
-        # Mostrar tabla
         st.dataframe(df_filtrado, use_container_width=True)
         
-        # Totales rápidos
         st.subheader("Resumen del período seleccionado")
+        df_filtrado['Monto'] = pd.to_numeric(df_filtrado['Monto'], errors='coerce').fillna(0)
+        
         total_entradas = df_filtrado[df_filtrado['Tipo'] == 'Entrada (Ingreso)']['Monto'].sum()
         total_salidas = df_filtrado[df_filtrado['Tipo'] == 'Salida (Gasto)']['Monto'].sum()
         
