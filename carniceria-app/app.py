@@ -5,7 +5,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
 
-# 1. Configuración de la página (Título de la pestaña e ícono)
 st.set_page_config(page_title="El Rincón del Asador", page_icon="🥩", layout="wide", initial_sidebar_state="expanded")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
@@ -13,8 +12,8 @@ st.set_page_config(page_title="El Rincón del Asador", page_icon="🥩", layout=
 def conectar_gsheets():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     
-    # Leemos la configuración directamente como un diccionario desde los secrets de Streamlit
-    creds_dict = dict(st.secrets["gcp_service_account"])
+    # Lee el bloque de texto desde los secrets y lo convierte en diccionario JSON perfectamente
+    creds_dict = json.loads(st.secrets["gcp_service_account"])
     
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
@@ -25,14 +24,13 @@ def conectar_gsheets():
 sheet = conectar_gsheets()
 
 # --- INTERFAZ PRINCIPAL CON LOGO Y TÍTULO ---
-col_logo, col_titulo = st.columns([1, 6]) # Ajusta las proporciones si lo ves necesario
+col_logo, col_titulo = st.columns([1, 6])
 
 with col_logo:
     try:
-        # Intenta cargar el logo subido al repositorio (Asegúrate de que se llame logo.png o cámbiale el nombre aquí)
         st.image("logo.png", width=90)
     except:
-        st.write("🥩") # Emoji de respaldo por si el archivo de imagen aún no fue subido
+        st.write("🥩")
 
 with col_titulo:
     st.title("El Rincón del Asador")
@@ -40,7 +38,6 @@ with col_titulo:
 
 st.markdown("---")
 
-# Pestañas de navegación
 tab1, tab2 = st.tabs(["📝 Registrar Movimiento", "📊 Consultar y Auditar"])
 
 with tab1:
