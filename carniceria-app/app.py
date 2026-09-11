@@ -12,11 +12,13 @@ st.set_page_config(page_title="El Rincón del Asador", page_icon="🥩", layout=
 @st.cache_resource
 def conectar_gsheets():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    creds_dict = json.loads(st.secrets["gcp_service_account"])
+    
+    # Leemos la configuración directamente como un diccionario desde los secrets de Streamlit
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     
-    # Asegúrate de que tu Google Sheet se llame exactamente "Carniceria_BD"
     sheet = client.open("Carniceria_BD").sheet1
     return sheet
 
